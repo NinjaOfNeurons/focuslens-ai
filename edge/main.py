@@ -4,16 +4,16 @@ import websockets
 import asyncio
 import json
 import time
-import numpy as np
+import uuid
 
 from visualizer import draw_overlay, draw_landmarks
-from landmark_extractor import eye_aspect_ratio, head_pose
+from landmark_extractor import extract_all
 
 WS_URL      = "ws://localhost:8001/ws/landmarks"
-SHOW_WINDOW = False   # set False to disable visual
+SHOW_WINDOW = False  # set True to see landmarks
 
-LEFT_EYE  = [159, 145, 33, 133]
-RIGHT_EYE = [386, 374, 263, 362]
+SESSION_ID = str(uuid.uuid4())  # generated once per session
+frame_id   = 0
 
 async def run():
     face_mesh = mp.solutions.face_mesh.FaceMesh(
@@ -28,11 +28,13 @@ async def run():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 10)
 
-    print("[edge] Camera opened — press Q to quit")
+    print(f"[edge] Camera opened — session: {SESSION_ID}")
 
     async for ws in websockets.connect(WS_URL):
         try:
-            print("[edge] Connected")
+            print("[edge] Connected to ingestion service")
+            global frame_id
+
             while True:
                 ret, frame = cap.read()
                 if not ret:
@@ -52,11 +54,14 @@ async def run():
                     await asyncio.sleep(0.1)
                     continue
 
-                lm = results.multi_face_landmarks[0].landmark
+                frame_id += 1
+                lm       = results.multi_face_landmarks[0].landmark
+                features = extract_all(lm, img_w, img_h)
 
-                ear   = eye_aspect_ratio(lm, LEFT_EYE, RIGHT_EYE, img_w, img_h)
-                yaw, pitch = head_pose(lm, img_w, img_h)
-
+                # focus rule — uses extracted features
+                ear     = features["eye"]["ear_avg"]
+                yaw     = features["head_pose"]["yaw"]
+                pitch   = features["head_pose"]["pitch"]
                 focused = bool(
                     ear > 0.08 and
                     abs(yaw) < 30 and
@@ -71,12 +76,24 @@ async def run():
                         break
 
                 payload = {
-                    "ear":     float(ear),
-                    "yaw":     float(yaw),
-                    "pitch":   float(pitch),
-                    "focused": focused,
-                    "ts":      int(time.time() * 1000)
+                    "session_id": SESSION_ID,
+                    "frame_id":   frame_id,
+                    "ts":         int(time.time() * 1000),
+                    **features,              # eye, head_pose, gaze
+                    "focus": {
+                        "rule_based":    focused,
+                        "score":         None,   # ML model fills later
+                        "model_version": None
+                    },
+                    "face": {
+                        "detected":   True,
+                        "confidence": float(results.multi_face_landmarks[0]
+                                           .landmark[0].visibility
+                                           if hasattr(results.multi_face_landmarks[0]
+                                           .landmark[0], 'visibility') else 0.99)
+                    }
                 }
+
                 await ws.send(json.dumps(payload))
                 await asyncio.sleep(0.1)
 
