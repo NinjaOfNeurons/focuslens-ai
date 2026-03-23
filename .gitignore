@@ -217,3 +217,4 @@ models/
 *.pem
 *.key
 secrets/frontend/minikube-darwin-amd64
+frontend/minikube-darwin-amd64
