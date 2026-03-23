@@ -37,9 +37,6 @@ Tracks iris position to determine where attention is directed — centre, left, 
 ### Session analytics
 Every session produces a summary report including overall focus score (0–100), distraction frequency, peak productivity windows, dominant attention cycle duration, and gaze zone distribution.
  
-### Smart alerts
-Notifies you in real time when focus is dropping, when a break is recommended, and when you have been away from the screen too long.
- 
 ### MLOps pipeline
 Experiment tracking via MLflow, model versioning, and an automated retraining pipeline. The rule-based focus classifier is designed to be replaced by a trained ONNX model with zero changes to the data pipeline.
  
@@ -51,7 +48,7 @@ Experiment tracking via MLflow, model versioning, and an automated retraining pi
 |---|---|
 | Edge capture | Python, OpenCV, MediaPipe FaceMesh |
 | Transport | WebSocket, JSON feature vectors |
-| Message bus | Redpanda (Kafka-compatible, no JVM) |
+| Message bus | Apache Kafka (via apache/kafka:3.7.0) |
 | Ingestion | Python, FastAPI |
 | Event processing | Python, FastAPI, psycopg2 |
 | Analytics | Python, FastAPI, Pandas, SciPy |
@@ -74,36 +71,54 @@ focuslens-ai/
 ├── edge/                        # edge agent — runs on webcam machine
 │   ├── main.py                  # orchestrator, camera loop
 │   ├── landmark_extractor.py    # MediaPipe feature extraction
-│   ├── visualizer.py            # optional visual overlay (toggle with flag)
+│   ├── visualizer.py            # optional visual overlay (SHOW_WINDOW flag)
 │   └── requirements.txt
 │
 ├── services/
-│   ├── ingestion/               # WebSocket receiver, Redpanda producer
+│   ├── ingestion/               # WebSocket receiver, Kafka producer
+│   │   ├── main.py
+│   │   ├── init_db.py           # creates database schema
+│   │   ├── requirements.txt
+│   │   └── Dockerfile
 │   ├── event/                   # Kafka consumer, PostgreSQL writer
+│   │   ├── main.py
+│   │   ├── requirements.txt
+│   │   └── Dockerfile
 │   ├── analytics/               # rhythm engine, session scoring, REST API
-│   ├── backend/                 # BFF — aggregates data for dashboard
-│   └── notify/                  # WebSocket alert push to browser
+│   │   ├── main.py
+│   │   ├── db.py
+│   │   ├── rhythm_engine.py
+│   │   ├── requirements.txt
+│   │   └── Dockerfile
+│   └── backend/                 # BFF — aggregates data for dashboard
+│       ├── main.py
+│       ├── requirements.txt
+│       └── Dockerfile
 │
 ├── frontend/                    # React dashboard
+│   ├── index.html
+│   ├── package.json
 │   └── src/
 │       ├── api.js               # API calls to backend
 │       └── main.js              # dashboard UI
 │
-├── ml/
-│   ├── notebooks/               # experimentation
-│   ├── training/                # training scripts
-│   └── models/                  # .onnx model files (tracked by MLflow)
+├── k8s/                         # Kubernetes manifests
+│   ├── configmap/
+│   │   └── config.yaml
+│   ├── secrets/
+│   │   └── secrets.yaml
+│   ├── infra/
+│   │   ├── redpanda.yaml        # Kafka (apache/kafka:3.7.0)
+│   │   ├── postgres.yaml        # TimescaleDB
+│   │   └── redis.yaml
+│   ├── services/
+│   │   ├── ingestion.yaml
+│   │   ├── event.yaml
+│   │   ├── analytics.yaml
+│   │   └── backend.yaml
+│   └── ingress.yaml
 │
-├── helm/                        # Kubernetes Helm chart
-│   └── focuslens/
-│       ├── values.yaml
-│       └── values.local.yaml
-│
-├── .github/
-│   └── workflows/
-│       └── deploy.yml           # CI/CD pipeline
-│
-├── docker-compose.yml           # local development
+├── docker-compose.yml           # local development (no K8s)
 └── .gitignore
 ```
  
@@ -111,11 +126,11 @@ focuslens-ai/
  
 ## Data pipeline
  
-Each webcam frame produces a feature vector that flows through the pipeline:
+Each webcam frame produces a feature vector:
  
 ```json
 {
-  "session_id": "b5b32af8-27f4-4a07-816a-203ee086f6a2",
+  "session_id": "746014e1-5464-4931-8dea-e446a2b43e7d",
   "frame_id": 1042,
   "ts": 1742600000000,
   "eye": {
@@ -148,41 +163,43 @@ Each webcam frame produces a feature vector that flows through the pipeline:
 }
 ```
  
-The `focus.score` field is `null` today and will be populated by the trained ML model. The pipeline does not change when the model is introduced.
+---
+ 
+## Prerequisites
+ 
+Before starting, install the following on your machine:
+ 
+- **Python 3.11** via miniconda
+- **Docker Desktop** — must be running before any step
+- **Node.js 22** via nvm
+- **minikube** — local Kubernetes
+- **kubectl** — Kubernetes CLI
+- **helm** — Kubernetes package manager
+ 
+```bash
+# install minikube
+brew install minikube
+ 
+# install kubectl
+brew install kubectl
+ 
+# install helm
+brew install helm
+ 
+# install nvm then node 22
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+# restart terminal then:
+nvm install 22
+nvm use 22
+```
  
 ---
  
-## ML roadmap
+## Option A — Run with Docker Compose (development)
  
-| Phase | Approach | Status |
-|---|---|---|
-| 1 | Rule-based classifier (EAR + head pose thresholds) | Done |
-| 2 | CNN on face crops — MobileNetV3 fine-tuned | Planned |
-| 3 | LSTM over 30-frame windows for temporal smoothing | Planned |
-| 4 | Multimodal — vision + time-series fusion | Planned |
+This is the fastest way to get running. No Kubernetes required.
  
----
- 
-## Privacy
- 
-- Raw video frames are never stored anywhere
-- MediaPipe runs locally on the edge device
-- Only numerical feature vectors leave the edge process
-- All data stays on your local machine
-- No external API calls, no cloud storage
- 
----
- 
-## Running locally
- 
-### Prerequisites
- 
-- Python 3.11
-- Docker Desktop
-- Node.js 22
-- conda (miniconda or anaconda)
- 
-### 1. Create and activate conda environment
+### 1. Create conda environment
  
 ```bash
 conda create -n focus python=3.11
@@ -197,36 +214,46 @@ docker compose up -d
  
 Starts Redpanda, PostgreSQL + TimescaleDB, and Redis.
  
+Verify:
+ 
+```bash
+docker compose ps
+# should show 3 containers running: redpanda, postgres, redis
+```
+ 
 ### 3. Initialise database
  
 ```bash
 cd services/ingestion
 python -m pip install psycopg2-binary
 python init_db.py
+# output: [db] Tables created successfully
 ```
  
-### 4. Install dependencies
+### 4. Install all dependencies
+ 
+Run from the repo root:
  
 ```bash
 # edge agent
-cd edge && python -m pip install -r requirements.txt
+cd edge && python -m pip install -r requirements.txt && cd ..
  
-# each service
-cd services/ingestion && python -m pip install -r requirements.txt
-cd services/event     && python -m pip install -r requirements.txt
-cd services/analytics && python -m pip install -r requirements.txt
-cd services/backend   && python -m pip install -r requirements.txt
+# services
+cd services/ingestion && python -m pip install -r requirements.txt && cd ../..
+cd services/event     && python -m pip install -r requirements.txt && cd ../..
+cd services/analytics && python -m pip install -r requirements.txt && cd ../..
+cd services/backend   && python -m pip install -r requirements.txt && cd ../..
  
 # frontend
-cd frontend && npm install
+cd frontend && npm install && cd ..
 ```
  
-### 5. Run all services
+### 5. Start all services
  
-Open 7 terminals with the conda env active in each (`conda activate focus`):
+Open 7 terminals. Activate `conda activate focus` in each Python terminal.
  
 ```bash
-# Terminal 1 — infrastructure (already running from step 2)
+# Terminal 1 — infrastructure (already running)
 docker compose up -d
  
 # Terminal 2 — ingestion service
@@ -254,7 +281,7 @@ cd edge
 python main.py
 ```
  
-### 6. Open the dashboard
+### 6. Open dashboard
  
 ```
 http://localhost:3000
@@ -267,34 +294,304 @@ docker exec -it focuslens-ai-postgres-1 psql -U fl_user -d focuslens \
   -c "SELECT session_id, ts, ear_avg, focused, gaze_zone FROM focus_events ORDER BY ts DESC LIMIT 5;"
 ```
  
-### Service ports
+---
  
-| Service | Port |
-|---|---|
-| Frontend dashboard | 3000 |
-| Backend API | 8000 |
-| Ingestion service | 8001 |
-| Analytics service | 8004 |
-| PostgreSQL | 5432 |
-| Redpanda (Kafka) | 9092 |
-| Redis | 6379 |
+## Option B — Run on Kubernetes (minikube)
  
-### API endpoints
+### 1. Start minikube
+ 
+Make sure Docker Desktop is running first.
  
 ```bash
-# latest session
+minikube start --cpus=4 --memory=7000mb --disk-size=30g --driver=docker
+```
+ 
+Verify:
+ 
+```bash
+minikube status
+kubectl get nodes
+# should show: minikube   Ready   control-plane
+```
+ 
+### 2. Enable addons
+ 
+```bash
+minikube addons enable ingress
+minikube addons enable metrics-server
+```
+ 
+### 3. Create namespace
+ 
+```bash
+kubectl create namespace focuslens
+```
+ 
+### 4. Apply configmap and secrets
+ 
+```bash
+kubectl apply -f k8s/configmap/config.yaml
+kubectl apply -f k8s/secrets/secrets.yaml
+ 
+# verify
+kubectl get configmap -n focuslens
+kubectl get secret -n focuslens
+```
+ 
+### 5. Deploy infrastructure
+ 
+```bash
+kubectl apply -f k8s/infra/postgres.yaml
+kubectl apply -f k8s/infra/redis.yaml
+kubectl apply -f k8s/infra/redpanda.yaml
+```
+ 
+Wait for all three to be Running (takes 1-2 minutes for image pulls):
+ 
+```bash
+kubectl get pods -n focuslens -w
+# wait until postgres-0, redis-0, redpanda-0 all show Running
+```
+ 
+### 6. Initialise database schema
+ 
+```bash
+kubectl exec -it postgres-0 -n focuslens -- psql -U fl_user -d focuslens -c "
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE TABLE IF NOT EXISTS focus_events (
+    id          BIGSERIAL,
+    session_id  TEXT        NOT NULL,
+    frame_id    INTEGER     NOT NULL,
+    ts          TIMESTAMPTZ NOT NULL,
+    ear_left    FLOAT,
+    ear_right   FLOAT,
+    ear_avg     FLOAT,
+    blink       BOOLEAN,
+    yaw         FLOAT,
+    pitch       FLOAT,
+    roll        FLOAT,
+    gaze_zone   TEXT,
+    iris_left_x FLOAT,
+    iris_left_y FLOAT,
+    focused     BOOLEAN,
+    focus_score FLOAT,
+    PRIMARY KEY (id, ts)
+);
+SELECT create_hypertable('focus_events', 'ts', if_not_exists => TRUE);
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id   TEXT PRIMARY KEY,
+    started_at   TIMESTAMPTZ NOT NULL,
+    ended_at     TIMESTAMPTZ,
+    focus_score  FLOAT,
+    total_frames INTEGER DEFAULT 0
+);
+"
+```
+ 
+### 7. Build Docker images inside minikube
+ 
+This points your Docker CLI at minikube's internal Docker daemon so images are available to K8s without pushing to a registry:
+ 
+```bash
+eval $(minikube docker-env)
+ 
+docker build -t focuslens/ingestion:latest services/ingestion/
+docker build -t focuslens/event:latest     services/event/
+docker build -t focuslens/analytics:latest services/analytics/
+docker build -t focuslens/backend:latest   services/backend/
+```
+ 
+Verify images are available:
+ 
+```bash
+docker images | grep focuslens
+```
+ 
+### 8. Deploy services
+ 
+```bash
+kubectl apply -f k8s/services/ingestion.yaml
+kubectl apply -f k8s/services/event.yaml
+kubectl apply -f k8s/services/analytics.yaml
+kubectl apply -f k8s/services/backend.yaml
+```
+ 
+Watch all pods come up:
+ 
+```bash
+kubectl get pods -n focuslens -w
+```
+ 
+All 7 pods should show Running:
+ 
+```
+analytics    Running
+backend      Running
+event        Running
+ingestion    Running
+postgres-0   Running
+redis-0      Running
+redpanda-0   Running
+```
+ 
+### 9. Expose services via port-forward
+ 
+Since we are running minikube locally with the Docker driver, use port-forward to access services from your machine:
+ 
+```bash
+# expose backend API
+kubectl port-forward svc/backend -n focuslens 8000:8000 &
+ 
+# expose ingestion WebSocket
+kubectl port-forward svc/ingestion -n focuslens 8001:8001 &
+```
+ 
+### 10. Verify the API is responding
+ 
+```bash
+curl http://localhost:8000/health
+# {"status": "ok"}
+```
+ 
+### 11. Start the edge agent
+ 
+Open a new terminal with the focus conda environment:
+ 
+```bash
+conda activate focus
+cd edge
+python main.py
+```
+ 
+The edge agent opens your webcam and starts sending landmark data to the K8s ingestion service.
+ 
+### 12. Verify data is flowing into K8s
+ 
+```bash
+kubectl logs -f deployment/event -n focuslens
+# should show: [event] Saved frame 1 session xxxx focused=True
+```
+ 
+### 13. Query analytics
+ 
+```bash
+# get your session id
+curl http://localhost:8000/api/latest-session
+ 
+# get full session report
+curl http://localhost:8000/api/sessions/{session_id} | python -m json.tool
+```
+ 
+### 14. Start frontend dashboard
+ 
+```bash
+cd frontend
+nvm use 22
+npm run dev
+```
+ 
+Open `http://localhost:3000`
+ 
+---
+ 
+## Rebuilding after code changes
+ 
+When you change any service code, rebuild and redeploy:
+ 
+```bash
+eval $(minikube docker-env)
+docker build -t focuslens/{service}:latest services/{service}/
+kubectl rollout restart deployment {service} -n focuslens
+ 
+# example — rebuild backend
+docker build -t focuslens/backend:latest services/backend/
+kubectl rollout restart deployment backend -n focuslens
+```
+ 
+---
+ 
+## Service ports
+ 
+| Service | Port | Notes |
+|---|---|---|
+| Frontend dashboard | 3000 | npm run dev |
+| Backend API | 8000 | port-forwarded from K8s |
+| Ingestion service | 8001 | port-forwarded from K8s |
+| Analytics service | 8004 | internal K8s only |
+| PostgreSQL | 5432 | internal K8s only |
+| Redpanda (Kafka) | 9092 | internal K8s only |
+| Redis | 6379 | internal K8s only |
+ 
+---
+ 
+## API endpoints
+ 
+```bash
+# health check
+GET http://localhost:8000/health
+ 
+# latest session id
 GET http://localhost:8000/api/latest-session
  
-# session report
+# full session analytics report
 GET http://localhost:8000/api/sessions/{session_id}
- 
-# live feed (last 60 frames)
-GET http://localhost:8000/api/live/{session_id}
  
 # list all sessions
 GET http://localhost:8000/api/sessions
  
-# analytics direct
-GET http://localhost:8004/analytics/{session_id}
+# live feed — last 60 frames
+GET http://localhost:8000/api/live/{session_id}
 ```
+ 
+---
+ 
+## Useful kubectl commands
+ 
+```bash
+# see all pods
+kubectl get pods -n focuslens
+ 
+# see all pods across all namespaces
+kubectl get pods -A
+ 
+# logs for a service
+kubectl logs -f deployment/backend -n focuslens
+ 
+# restart a deployment
+kubectl rollout restart deployment backend -n focuslens
+ 
+# describe a pod (for debugging)
+kubectl describe pod {pod-name} -n focuslens
+ 
+# exec into a pod
+kubectl exec -it {pod-name} -n focuslens -- /bin/bash
+ 
+# exec into postgres
+kubectl exec -it postgres-0 -n focuslens -- psql -U fl_user -d focuslens
+ 
+# check recent focus events
+kubectl exec -it postgres-0 -n focuslens -- psql -U fl_user -d focuslens \
+  -c "SELECT session_id, ts, ear_avg, focused, gaze_zone FROM focus_events ORDER BY ts DESC LIMIT 10;"
+```
+ 
+---
+ 
+## ML roadmap
+ 
+| Phase | Approach | Status |
+|---|---|---|
+| 1 | Rule-based classifier (EAR + head pose thresholds) | Done |
+| 2 | CNN on face crops — MobileNetV3 fine-tuned | Planned |
+| 3 | LSTM over 30-frame windows for temporal smoothing | Planned |
+| 4 | Multimodal — vision + time-series fusion | Planned |
+ 
+---
+ 
+## Privacy
+ 
+- Raw video frames are never stored anywhere
+- MediaPipe runs locally on the edge device
+- Only numerical feature vectors leave the edge process
+- All data stays on your local machine
+- No external API calls, no cloud storage
  
