@@ -16,40 +16,7 @@ No raw video is ever stored. The system processes frames locally, extracts only 
 
 FocusLens is built as an edge-to-server system. The machine running the webcam handles all visual processing locally. Only a small JSON feature vector is sent to the server pipeline — never raw video frames.
 
-```
-Edge device (your machine)
-─────────────────────────
-Webcam → OpenCV frame capture
-       → MediaPipe FaceMesh (478 landmarks)
-       → Eye Aspect Ratio (EAR)
-       → Head pose (yaw, pitch, roll)
-       → Gaze zone detection
-       → Feature vector JSON
-             │
-             │ WebSocket (tiny payload ~60KB/s)
-             ▼
-Server pipeline (local Kubernetes cluster)
-──────────────────────────────────────────
-Ingestion service     receives WebSocket stream
-      │
-      ▼
-Redpanda              message bus (Kafka-compatible)
-      │
-      ├──▶ Event service      state machine, writes to PostgreSQL
-      │
-      └──▶ Analytics service  rhythm engine, session scoring
-                  │
-                  ▼
-         TimescaleDB           focus time-series storage
-         PostgreSQL            sessions, events, metadata
-         Redis                 session cache
-                  │
-                  ▼
-         Backend API           REST endpoints for dashboard
-                  │
-                  ▼
-         React dashboard       live focus graph, session report
-```
+![alt text](asset/static/image.png)
 
 ---
 
