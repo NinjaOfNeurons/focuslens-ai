@@ -21,32 +21,32 @@ FocusLens is built as an edge-to-server system. The machine running the webcam h
 ---
 
 ## Features
-
+ 
 ### Real-time focus detection
 Detects attention state from webcam feed at 10 frames per second using facial landmark analysis. Computes eye openness, head orientation, and gaze direction to classify each frame as focused or distracted.
-
+ 
 ### Rich feature extraction
 Every frame produces a structured feature vector including eye aspect ratio (left and right independently), head pose in three axes (yaw, pitch, roll), iris position and gaze zone, blink detection, and a session identifier that ties all frames together.
-
+ 
 ### Cognitive Rhythm Engine
-Analyses the focus signal as a time series to detect natural attention cycles. Uses signal smoothing, peak detection, and frequency analysis to identify your personal productivity rhythm — typically a 25 to 45 minute ultradian cycle. Predicts upcoming focus drops before they occur.
-
+Analyses the focus signal over time to detect natural attention cycles. Uses signal smoothing, peak detection, and frequency analysis to identify your personal productivity rhythm. Predicts upcoming focus drops before they occur.
+ 
 ### Gaze zone tracking
 Tracks iris position to determine where attention is directed — centre, left, right, up, or down. Feeds into distraction pattern analysis and future attention heatmap features.
-
+ 
 ### Session analytics
 Every session produces a summary report including overall focus score (0–100), distraction frequency, peak productivity windows, dominant attention cycle duration, and gaze zone distribution.
-
+ 
 ### Smart alerts
 Notifies you in real time when focus is dropping, when a break is recommended, and when you have been away from the screen too long.
-
+ 
 ### MLOps pipeline
 Experiment tracking via MLflow, model versioning, and an automated retraining pipeline. The rule-based focus classifier is designed to be replaced by a trained ONNX model with zero changes to the data pipeline.
-
+ 
 ---
-
+ 
 ## Tech stack
-
+ 
 | Layer | Technology |
 |---|---|
 | Edge capture | Python, OpenCV, MediaPipe FaceMesh |
@@ -59,16 +59,16 @@ Experiment tracking via MLflow, model versioning, and an automated retraining pi
 | Cache | Redis |
 | ML tracking | MLflow |
 | Model serving | ONNX Runtime |
-| Frontend | React, TypeScript, Vite, Recharts |
+| Frontend | React, Vite |
 | Container runtime | Docker, Docker Compose |
 | Orchestration | Kubernetes (minikube) |
 | CI/CD | GitHub Actions (self-hosted runner) |
 | Observability | Prometheus, Grafana, Loki |
-
+ 
 ---
-
+ 
 ## Project structure
-
+ 
 ```
 focuslens-ai/
 ├── edge/                        # edge agent — runs on webcam machine
@@ -86,8 +86,8 @@ focuslens-ai/
 │
 ├── frontend/                    # React dashboard
 │   └── src/
-│       ├── components/          # focus chart, session report, heatmap
-│       └── main.js
+│       ├── api.js               # API calls to backend
+│       └── main.js              # dashboard UI
 │
 ├── ml/
 │   ├── notebooks/               # experimentation
@@ -106,13 +106,13 @@ focuslens-ai/
 ├── docker-compose.yml           # local development
 └── .gitignore
 ```
-
+ 
 ---
-
+ 
 ## Data pipeline
-
+ 
 Each webcam frame produces a feature vector that flows through the pipeline:
-
+ 
 ```json
 {
   "session_id": "b5b32af8-27f4-4a07-816a-203ee086f6a2",
@@ -147,59 +147,154 @@ Each webcam frame produces a feature vector that flows through the pipeline:
   }
 }
 ```
-
+ 
 The `focus.score` field is `null` today and will be populated by the trained ML model. The pipeline does not change when the model is introduced.
-
+ 
 ---
-
+ 
 ## ML roadmap
-
+ 
 | Phase | Approach | Status |
 |---|---|---|
 | 1 | Rule-based classifier (EAR + head pose thresholds) | Done |
 | 2 | CNN on face crops — MobileNetV3 fine-tuned | Planned |
 | 3 | LSTM over 30-frame windows for temporal smoothing | Planned |
 | 4 | Multimodal — vision + time-series fusion | Planned |
-
+ 
 ---
-
+ 
 ## Privacy
-
+ 
 - Raw video frames are never stored anywhere
 - MediaPipe runs locally on the edge device
 - Only numerical feature vectors leave the edge process
 - All data stays on your local machine
 - No external API calls, no cloud storage
-
+ 
 ---
-
+ 
 ## Running locally
-
-**Prerequisites:** Python 3.11, Docker Desktop, Node.js 22, minikube
-
+ 
+### Prerequisites
+ 
+- Python 3.11
+- Docker Desktop
+- Node.js 22
+- conda (miniconda or anaconda)
+ 
+### 1. Create and activate conda environment
+ 
 ```bash
-# 1. start infrastructure
+conda create -n focus python=3.11
+conda activate focus
+```
+ 
+### 2. Start infrastructure
+ 
+```bash
 docker compose up -d
-
-# 2. initialise database
+```
+ 
+Starts Redpanda, PostgreSQL + TimescaleDB, and Redis.
+ 
+### 3. Initialise database
+ 
+```bash
 cd services/ingestion
+python -m pip install psycopg2-binary
 python init_db.py
-
-# 3. start ingestion service
+```
+ 
+### 4. Install dependencies
+ 
+```bash
+# edge agent
+cd edge && python -m pip install -r requirements.txt
+ 
+# each service
+cd services/ingestion && python -m pip install -r requirements.txt
+cd services/event     && python -m pip install -r requirements.txt
+cd services/analytics && python -m pip install -r requirements.txt
+cd services/backend   && python -m pip install -r requirements.txt
+ 
+# frontend
+cd frontend && npm install
+```
+ 
+### 5. Run all services
+ 
+Open 7 terminals with the conda env active in each (`conda activate focus`):
+ 
+```bash
+# Terminal 1 — infrastructure (already running from step 2)
+docker compose up -d
+ 
+# Terminal 2 — ingestion service
+cd services/ingestion
 uvicorn main:app --host 0.0.0.0 --port 8001 --reload
-
-# 4. start event service
+ 
+# Terminal 3 — event service
 cd services/event
 python main.py
-
-# 5. start edge agent
+ 
+# Terminal 4 — analytics service
+cd services/analytics
+uvicorn main:app --host 0.0.0.0 --port 8004 --reload
+ 
+# Terminal 5 — backend API
+cd services/backend
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+ 
+# Terminal 6 — frontend dashboard
+cd frontend
+npm run dev
+ 
+# Terminal 7 — edge agent (starts webcam)
 cd edge
 python main.py
 ```
-
-Verify data is flowing:
-
+ 
+### 6. Open the dashboard
+ 
+```
+http://localhost:3000
+```
+ 
+### 7. Verify data is flowing
+ 
 ```bash
 docker exec -it focuslens-ai-postgres-1 psql -U fl_user -d focuslens \
   -c "SELECT session_id, ts, ear_avg, focused, gaze_zone FROM focus_events ORDER BY ts DESC LIMIT 5;"
 ```
+ 
+### Service ports
+ 
+| Service | Port |
+|---|---|
+| Frontend dashboard | 3000 |
+| Backend API | 8000 |
+| Ingestion service | 8001 |
+| Analytics service | 8004 |
+| PostgreSQL | 5432 |
+| Redpanda (Kafka) | 9092 |
+| Redis | 6379 |
+ 
+### API endpoints
+ 
+```bash
+# latest session
+GET http://localhost:8000/api/latest-session
+ 
+# session report
+GET http://localhost:8000/api/sessions/{session_id}
+ 
+# live feed (last 60 frames)
+GET http://localhost:8000/api/live/{session_id}
+ 
+# list all sessions
+GET http://localhost:8000/api/sessions
+ 
+# analytics direct
+GET http://localhost:8004/analytics/{session_id}
+```
+ 
