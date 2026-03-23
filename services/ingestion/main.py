@@ -2,13 +2,28 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from kafka import KafkaProducer
 import json
 import datetime
+import os
+
+
 
 app = FastAPI()
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 
 producer = KafkaProducer(
-    bootstrap_servers="localhost:9092",
+    bootstrap_servers=KAFKA_BOOTSTRAP,
     value_serializer=lambda v: json.dumps(v).encode("utf-8")
 )
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+# producer = KafkaProducer(
+#     bootstrap_servers="localhost:9092",
+#     value_serializer=lambda v: json.dumps(v).encode("utf-8")
+# )
 
 @app.websocket("/ws/landmarks")
 async def landmarks(ws: WebSocket):

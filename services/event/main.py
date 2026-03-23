@@ -2,12 +2,13 @@ from kafka import KafkaConsumer
 import psycopg2
 import json
 import datetime
+import os
 
-DB = dict(host="localhost", port=5432,
-          dbname="focuslens", user="fl_user", password="fl_pass")
+DATABASE_URL    = os.getenv("DATABASE_URL",   "postgresql://fl_user:fl_pass@localhost:5432/focuslens")
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 
 def get_conn():
-    return psycopg2.connect(**DB)
+    return psycopg2.connect(DATABASE_URL)
 
 def insert_event(cur, data):
     ts = datetime.datetime.fromtimestamp(data["ts"] / 1000,
@@ -47,11 +48,11 @@ def insert_event(cur, data):
 def run():
     conn = get_conn()
     cur  = conn.cursor()
-    print("[event] Connecting to Redpanda...")
+    print(f"[event] Connecting to Redpanda at {KAFKA_BOOTSTRAP}...")
 
     consumer = KafkaConsumer(
         "focus-raw",
-        bootstrap_servers="localhost:9092",
+        bootstrap_servers=KAFKA_BOOTSTRAP,
         value_deserializer=lambda m: json.loads(m.decode("utf-8")),
         auto_offset_reset="latest",
         group_id="event-service"

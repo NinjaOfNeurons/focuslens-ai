@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion
+  namespace: focuslens
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingestion
+  template:
+    metadata:
+      labels:
+        app: ingestion
+    spec:
+      containers:
+      - name: ingestion
+        image: focuslens/ingestion:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8001
+        env:
+        - name: KAFKA_BOOTSTRAP
+          valueFrom:
+            configMapKeyRef:
+              name: focuslens-config
+              key: KAFKA_BOOTSTRAP
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "300m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 10
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestion
+  namespace: focuslens
+spec:
+  selector:
+    app: ingestion
+  ports:
+  - port: 8001
+    targetPort: 8001
+    

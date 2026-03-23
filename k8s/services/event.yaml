@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event
+  namespace: focuslens
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: event
+  template:
+    metadata:
+      labels:
+        app: event
+    spec:
+      containers:
+      - name: event
+        image: focuslens/event:latest
+        imagePullPolicy: Never
+        env:
+        - name: KAFKA_BOOTSTRAP
+          valueFrom:
+            configMapKeyRef:
+              name: focuslens-config
+              key: KAFKA_BOOTSTRAP
+        - name: DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: focuslens-config
+              key: DATABASE_URL
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "300m"

@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: focuslens-ingress
+  namespace: focuslens
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: focuslens.local
+    http:
+      paths:
+      - path: /api(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8000
+      - path: /ws(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: ingestion
+            port:
+              number: 8001

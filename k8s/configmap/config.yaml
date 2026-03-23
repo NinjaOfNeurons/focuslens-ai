@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: focuslens-config
+  namespace: focuslens
+data:
+  KAFKA_BOOTSTRAP:  "redpanda:9092"
+  DATABASE_URL:     "postgresql://fl_user:fl_pass@postgres:5432/focuslens"
+  REDIS_URL:        "redis://redis:6379"
+  ANALYTICS_URL:    "http://analytics:8004"

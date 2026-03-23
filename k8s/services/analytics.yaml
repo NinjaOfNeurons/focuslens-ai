@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics
+  namespace: focuslens
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analytics
+  template:
+    metadata:
+      labels:
+        app: analytics
+    spec:
+      containers:
+      - name: analytics
+        image: focuslens/analytics:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8004
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: focuslens-config
+              key: DATABASE_URL
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8004
+          initialDelaySeconds: 10
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics
+  namespace: focuslens
+spec:
+  selector:
+    app: analytics
+  ports:
+  - port: 8004
+    targetPort: 8004
