@@ -10,7 +10,7 @@ from visualizer import draw_overlay, draw_landmarks
 from landmark_extractor import extract_all
 
 WS_URL      = "ws://localhost:8001/ws/landmarks"
-SHOW_WINDOW = False  # set True to see landmarks
+SHOW_WINDOW = True  # set True to see landmarks
 
 SESSION_ID = str(uuid.uuid4())  # generated once per session
 frame_id   = 0
