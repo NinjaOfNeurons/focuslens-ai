@@ -216,4 +216,4 @@ models/
 # Secrets (never commit these)
 *.pem
 *.key
-secrets/
+secrets/frontend/minikube-darwin-amd64
