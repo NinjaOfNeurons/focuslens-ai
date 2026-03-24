@@ -573,7 +573,83 @@ kubectl exec -it postgres-0 -n focuslens -- psql -U fl_user -d focuslens
 kubectl exec -it postgres-0 -n focuslens -- psql -U fl_user -d focuslens \
   -c "SELECT session_id, ts, ear_avg, focused, gaze_zone FROM focus_events ORDER BY ts DESC LIMIT 10;"
 ```
- 
+
+
+# Post-Kubernetes Setup Guide
+
+After you have set up Kubernetes and deployed your services, follow these steps to get everything running locally.
+
+---
+
+## 1. Start Minikube
+```bash
+minikube start  # ~30 seconds
+````
+
+---
+
+## 2. Port-forward your services
+
+This allows you to access them locally on your machine:
+
+```bash
+kubectl port-forward svc/backend -n focuslens 8000:8000 &
+kubectl port-forward svc/ingestion -n focuslens 8001:8001 &
+```
+
+---
+
+## 3. Start the frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+---
+
+## 4. Run the edge service
+
+```bash
+python edge/main.py
+```
+
+---
+
+## Optional: Run everything with one script
+
+You can run a `start_all.sh` script to automate all steps:
+
+```bash
+#!/bin/bash
+
+# Start Minikube
+minikube start
+
+# Port-forward services
+kubectl port-forward svc/backend -n focuslens 8000:8000 &
+kubectl port-forward svc/ingestion -n focuslens 8001:8001 &
+
+# Start frontend
+(cd frontend && npm run dev) &
+
+# Start edge service
+python edge/main.py
+```
+
+Make it executable and run:
+
+```bash
+chmod +x start_all.sh
+./start_all.sh
+```
+
+This will start Minikube, port-forward services, launch the frontend, and run `edge/main.py` all at once.
+
+
+
+
+
 ---
  
 ## ML roadmap
