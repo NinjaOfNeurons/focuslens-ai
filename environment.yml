@@ -49,8 +49,8 @@ dependencies:
   - libev=4.33
   - libevent=2.1.12
   - libffi=3.4.4
-  - libgfortran=5.0.0
-  - libgfortran5=11.3.0
+  - libgfortran
+  - libgfortran5
   - libglib=2.84.2
   - libiconv=1.16
   - libkrb5=1.21.3
