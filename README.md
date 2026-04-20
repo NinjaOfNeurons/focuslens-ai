@@ -1,6 +1,6 @@
 # FocusLens AI
 
-An intelligent focus tracking system that uses computer vision and machine learning to analyse attention patterns during work or study sessions. FocusLens runs entirely on your local machine — no cloud, no video storage, no external dependencies.
+An intelligent focus tracking system that uses computer vision and machine learning to analyse attention patterns during work or study sessions. FocusLens runs entirely on your local machine with no cloud, no video storage, no external dependencies.
 
 ---
 
